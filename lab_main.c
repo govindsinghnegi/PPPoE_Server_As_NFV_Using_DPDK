@@ -64,6 +64,7 @@
 #define ETHDEV_ID	0
 
 #include "pppoe.h"
+#include "ippool.c"
 #include "lab_task.c"
 
 struct rte_mempool* mempool;

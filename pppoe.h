@@ -37,12 +37,17 @@ extern struct rte_mempool* mempool;
 #define ETHER_DISCOVERY	0x8863
 #define ETHER_SESSION	0x8864
 
+//PPPoE version and type
+#define PPPOE_VER	0x01
+#define PPPOE_TYPE	0x01
+
 //PPPoE codes
 #define CODE_PADI	0x09
 #define CODE_PADO	0x07
 #define CODE_PADR	0x19	
 #define CODE_PADS	0x65
 #define CODE_PADT	0xa7
+#define CODE_SESS	0x00
 
 //PPPoE encapsulation structure
 typedef struct __attribute__((__packed__)) {
@@ -77,6 +82,8 @@ typedef struct __attribute__((__packed__)) {
 #define	PROTO_PAP	0xc023
 #define	PROTO_LQR	0xc025
 #define	PROTO_CHAP	0xc223
+#define	PROTO_CCP	0x80fd
+#define	PROTO_IPCP	0x8021
 
 //PPP eccapsulation structure
 typedef struct __attribute__((__packed__)) {
@@ -103,6 +110,22 @@ typedef struct __attribute__((__packed__)) {
 	unsigned int length:16;
 } PPPLcp;
 
+//PPP LCP Echo structure
+typedef struct __attribute__((__packed__)) {
+	unsigned int code:8;
+	unsigned int identifier:8;
+	unsigned int length:16;
+	unsigned int magic_number:32;
+} PPPLcpMagic;
+
+//PPP LCP reject structure
+typedef struct __attribute__((__packed__)) {
+	unsigned int code:8;
+	unsigned int identifier:8;
+	unsigned int length:16;
+	unsigned int protocol:16;
+} PPPLcpRjct;
+
 //PPP LCP option types
 #define TYPE_MRU	0x01
 #define TYPE_AUP	0x03
@@ -124,40 +147,93 @@ typedef struct __attribute__((__packed__)) {
 	unsigned int value:16;
 } PPPLcpOptionsGenl;
 
-//PPP LCP options echo structure
+//PPP LCP options magic structure
 typedef struct __attribute__((__packed__)) {
         unsigned int type:8;
         unsigned int length:8;
         unsigned int value:32;
-} PPPLcpOptionsEcho;
+} PPPLcpOptionsMagic;
 
 //PPP PAP codes
 #define CODE_AUT_REQ	0x01
 #define CODE_AUT_ACK	0x02
 #define CODE_AUT_NAK	0x03
 
-//PPP PAP structure
+//PPP PAP REQ structure
+typedef struct __attribute__((__packed__)) {
+	unsigned int code:8;
+	unsigned int identifier:8;
+	unsigned int length:16;
+} PPPPapReq;
+
+//PPP PAP ACK structure
 typedef struct __attribute__((__packed__)) {
 	unsigned int code:8;
 	unsigned int identifier:8;
 	unsigned int length:16;
 	unsigned int idms_length:8;
-} PPPPap;
+} PPPPapAck;
+
+//PPP IPCP codes
+#define CODE_IPCP_REQ	0x01
+#define CODE_IPCP_ACK	0x02
+#define CODE_IPCP_NAK	0x03
+
+//PPP IPCP structure
+typedef struct __attribute__((__packed__)) {
+	unsigned int code:8;
+	unsigned int identifier:8;
+	unsigned int length:16;
+} PPPIpcp;
+
+//PPP IPCP options
+#define TYPE_IP		0x03
+#define TYPE_DNS_PRI	0x81
+#define TYPE_DNS_SEC	0x83
+
+//PPP IPCP options structure
+typedef struct __attribute__((__packed__)) {
+        unsigned int type:8;
+        unsigned int length:8;
+        unsigned int value:32;
+} PPPIpcpOptions;
+
+//PPP IPCP used values structure
+typedef struct __attribute__((__packed__)) {
+        uint32_t ip;
+        uint32_t dns1;
+        uint32_t dns2;
+} PPPIpcpUsed;
 
 //session states
-#define STATE_PADS_SENT		0x0001
-#define STATE_CONF_AUTH_SENT	0x0002
-#define	STATE_AUTH_ACK_SENT	0x0003
-#define STATE_AUTH_ECHO_SENT	0x0004
+#define STATE_SESS_CRTD		0x00
+#define STATE_PADS_SENT		0x01
+#define STATE_CONF_AUTH_SENT	0x02
+#define	STATE_AUTH_ACK_SENT	0x03
+#define STATE_AUTH_ECHO_SENT	0x04
+
+//connection index structure per session
+struct conn_index {
+	unsigned int index;
+	struct conn_index * next;
+};
 
 //session structure
 typedef struct __attribute__((__packed__)) {
-	unsigned int state:16;
-	struct ether_addr l2hdr;
-	uint32_t ipv4_addr;
-	uint16_t port_real;
-	uint16_t port_assn;
+	unsigned int state:8;
+	struct ether_addr client_mac_addr;
+	uint32_t client_ipv4_addr;
 	unsigned int session_id:16;
+	struct conn_index * index;
 	unsigned int auth_ident:8;
 	unsigned int echo_ident:8;
+	unsigned int mru;
 } Session;
+
+//functions
+void send_config_req(uint8_t type, uint16_t session_id, struct ether_addr client_l2addr);
+void send_echo_req(uint16_t session_id, struct ether_addr client_l2addr);
+void send_auth_ack(uint16_t session_id, struct ether_addr client_l2addr);
+void send_proto_reject(uint16_t type, struct rte_mbuf * pkt);
+PPPIpcpUsed * get_ip_dns();
+void send_ip_req(uint32_t ip, struct rte_mbuf* pkt);
