@@ -38,5 +38,7 @@ int main()
     printf("\n secondry dns array content is : \n");
     for(i=0;i<4;i++)
         printf("%u\t", cp->secondaryDns[i]);
+    printf("\nsession timeout: %lf", cp->sessionTimeout);
+    printf("\nconnection timeout: %lf \n", cp->connectionTimeout);
     return 0;
 }

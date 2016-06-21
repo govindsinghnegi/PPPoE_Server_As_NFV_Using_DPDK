@@ -43,7 +43,7 @@ ConfigParameter * getConfigParameters(){
     char ipStr[MAX_STR_LEN];
 
     int tracker = 1;
-    const char filename[] = "/path/of/pppoe.conf";
+    const char filename[] = "/path/to/pppoe.conf";
     FILE *file = fopen ( filename, "r" );
     if ( file != NULL )
     {
@@ -88,6 +88,13 @@ ConfigParameter * getConfigParameters(){
                     convertStrToIP(ipStr, '.', '\0', configParameter->primaryDns, 4, 10);
                 }else{
                     convertStrToIP(ipStr, '.', '\0', configParameter->secondaryDns, 4, 10);
+                }
+            }else if((tracker == 28) || (tracker == 30)){
+                strcpy(temp,strtok(NULL, "\n"));
+                if(tracker == 28){
+                   sscanf(temp, "%lf", &configParameter->sessionTimeout);
+                }else{
+                    sscanf(temp, "%lf", &configParameter->connectionTimeout);
                 }
             }
             tracker++;

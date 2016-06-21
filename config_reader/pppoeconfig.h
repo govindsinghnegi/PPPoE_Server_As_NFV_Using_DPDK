@@ -2,7 +2,6 @@
 #define PPPOECONFIG_H_INCLUDED
 
 #define MAX_STR_LEN 100
-#define MAX_INT_LEN 6
 #define MAC_LEN 6
 #define IP_LEN 4
 
@@ -20,6 +19,8 @@ typedef struct ConfigParam {
         unsigned char ipAddressPool[5];
         unsigned char primaryDns[IP_LEN];
         unsigned char secondaryDns[IP_LEN];
+	double sessionTimeout;
+	double connectionTimeout;
     } ConfigParameter;
 
 ConfigParameter * getConfigParameters();
