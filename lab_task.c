@@ -1,9 +1,27 @@
-
 static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 
 	uint8_t lcore_id = rte_lcore_id();
 
 	struct rte_mbuf* rcv_pkt_bucket[BURSTLEN];
+
+	//start the two session maintenance threads
+	pthread_t s_tid, c_tid;
+	int error;
+	if (pthread_mutex_init(&conn_lock, NULL) != 0) {
+		if (DEBUG) {
+			RTE_LOG(INFO, USER1, "=> Mutex init failed\n");
+		}
+		return 1;
+	}	
+
+	error = pthread_create(&s_tid, NULL, &check_and_free_session, NULL);
+	if (error != 0 && DEBUG) {
+		RTE_LOG(INFO, USER1, "=> Session thread creation failed\n");
+	}
+	error = pthread_create(&c_tid, NULL, &check_and_free_connection, NULL);
+	if (error != 0 && DEBUG) {
+		RTE_LOG(INFO, USER1, "=> Connection thread creation failed\n");
+	}
 
 	/*
 	 *main loop for packet processing
@@ -27,6 +45,35 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 			if (__bswap_16(l2hdr->ether_type) == ETHER_DISCOVERY || __bswap_16(l2hdr->ether_type) == ETHER_SESSION) {
 				
 				PPPoEEncap * pppoee = (rte_pktmbuf_mtod(pkt, PPPoEEncap *));
+				//drop all, exept term ack, packets from client if termination requested
+				if (__bswap_16(l2hdr->ether_type) == ETHER_SESSION && (session_array[__bswap_16(pppoee->session)-1])->state == STATE_TERM_SENT) {
+
+					PPPEncap * pppptcl;
+					unsigned int seen = 0;
+					pppptcl = rte_pktmbuf_mtod_offset(pkt, PPPEncap *, sizeof(PPPoEEncap)+seen);
+					seen += sizeof(PPPEncap);
+
+					//check if it is a LCP packet
+					if (__bswap_16(pppptcl->protocol) == PROTO_LCP) {
+
+						PPPLcp * ppplcp;
+						ppplcp = rte_pktmbuf_mtod_offset(pkt, PPPLcp *, sizeof(PPPoEEncap)+seen);
+						seen += sizeof(PPPLcp);
+						if (ppplcp->code != CODE_TERM_ACK) {
+							if (DEBUG) {
+								RTE_LOG(INFO, USER1, "=> Packet from term sent client received, dropping...\n");
+							}
+							rte_pktmbuf_free(pkt);
+							continue;
+						}
+					} else {
+						if (DEBUG) {
+							RTE_LOG(INFO, USER1, "=> Packet from term sent client received, dropping...\n");
+						}
+						rte_pktmbuf_free(pkt);
+						continue;
+					}
+				}
 
 				//check if it is a PADI packet
 				if (pppoee->code == CODE_PADI) {
@@ -120,7 +167,6 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 					//add COOKIE tag
 					pppoetr = (PPPoETag *) rte_pktmbuf_append(pkt, sizeof(PPPoETag));
                                 	pppoetr->type = __bswap_16((uint16_t) (TYPE_AC_COOKIE));
-					//replace the below code with a valid cookie generation code
                                 	char * CKname = "CKNAME";
                                 	pppoetr->length = __bswap_16((uint16_t) (sizeof(CKname)));
                                 	char * ck_value = (char *) rte_pktmbuf_append(pkt, sizeof(CKname));
@@ -215,7 +261,20 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
                                         	}
 					}
 
-					//verify the cookie received 
+					//verify the cookie received
+					if (ck_length == 0) {
+						if (DEBUG) {
+							RTE_LOG(INFO, USER1, "=> PADR packet with no cookie received, dropping...\n");
+						}
+						rte_pktmbuf_free(pkt);
+						continue;
+					} else if (ck_length != 0 && memcmp(cookie, "CKNAME", sizeof(ck_length)) != 0) {
+						if (DEBUG) {
+							RTE_LOG(INFO, USER1, "=> PADR packet for unknown cookie received, dropping...\n");
+						}
+						rte_pktmbuf_free(pkt);
+						continue;
+					}
 	
 					//check if asked service name matches our service name
 					if (sn_length != 0 && memcmp(serviceName, service_name, sizeof(service_name)) != 0) {
@@ -226,9 +285,19 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 						continue;
 					}
 
-
 					//create a session
-
+					int index = create_session(pppoee->l2hdr.s_addr);
+					if (index < 0) {
+						if (DEBUG) {
+							RTE_LOG(INFO, USER1, "=> Session creation failed\n");
+						}
+						rte_pktmbuf_free(pkt);
+						continue;
+					}
+					//assign host unique
+					(session_array[index])->host_uniq = (char *) malloc(hu_length);
+					memcpy((session_array[index])->host_uniq, hostUnique, hu_length);
+					(session_array[index])->hu_len = hu_length;
 
 					//generate a PADS packet to send back
 					rte_pktmbuf_reset(pkt);
@@ -238,8 +307,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 					pppoeer->l2hdr.ether_type = pppoee->l2hdr.ether_type;
 					pppoeer->ver = pppoee->ver;
                                 	pppoeer->type = pppoee->type;
-					//TODO a random session for now
-                                	pppoeer->session = __bswap_16((uint16_t) 1234);
+                                	pppoeer->session = __bswap_16((session_array[index])->session_id);
                                 	pppoeer->code = CODE_PADS;
                                 	pppoeer->length = 0;
 
@@ -282,9 +350,19 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 					}
 
 					//send a Configure-request for Authetication to peer
-					send_config_req((uint8_t)TYPE_AUP, (uint16_t)1234, pppoee->l2hdr.d_addr);
+					send_config_req((uint8_t)TYPE_AUP, (uint16_t)index, pppoee->l2hdr.d_addr);
 					continue;
 
+				//check if it is PADT packet
+				} else if (pppoee->code == CODE_PADT) {
+
+					if (DEBUG) {
+						RTE_LOG(INFO, USER1, "=> Packet PADT received\n");
+					}
+
+					//delete the session
+					int index = __bswap_16(pppoee->session)-1;
+					delete_session(index);
 				//check if it is a session packet
 				} else if (pppoee->code == CODE_SESS) {
 
@@ -328,12 +406,13 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 								RTE_LOG(INFO, USER1, "=> Echo-request Packet received\n");
 							}
 
-							//check the configuration parameter, for now just send a Echo-request
+							//check the configuration parameter, for now just send a Echo-request and reply
 
 							ppplcp->code = CODE_ECHO_REP;
 
 							//send an echo-request back
-							send_echo_req((uint16_t)1234, pppoee->l2hdr.s_addr);
+							int index = __bswap_16(pppoee->session)-1;
+							send_echo_req((uint16_t)index, pppoee->l2hdr.s_addr);
 
 							memcpy(&pppoee->l2hdr.d_addr, &pppoee->l2hdr.s_addr, sizeof(struct ether_addr));
                                 			memcpy(&pppoee->l2hdr.s_addr, &srtointra_addr, sizeof(struct ether_addr));
@@ -351,9 +430,35 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 							rte_pktmbuf_free(pkt);
 							continue;
 
-						} else if (ppplcp->code == CODE_CONF_ACK){
+						} else if (ppplcp->code == CODE_CONF_ACK) {
 							if (DEBUG) {
 								RTE_LOG(INFO, USER1, "=> Configure-ACK Packet received\n");
+							}
+							rte_pktmbuf_free(pkt);
+							continue;
+
+						} else if (ppplcp->code == CODE_TERM_REQ) {
+							if (DEBUG) {
+								RTE_LOG(INFO, USER1, "=> Termination-req Packet received\n");
+							}
+							
+							ppplcp->code = CODE_TERM_ACK;
+							uint16_t len_remove = (uint16_t) (__bswap_16(ppplcp->length)-4);				
+							ppplcp->length = __bswap_16(4); //always will be 4
+							rte_pktmbuf_trim(pkt, len_remove);
+							memcpy(&pppoee->l2hdr.d_addr, &pppoee->l2hdr.s_addr, sizeof(struct ether_addr));
+                                			memcpy(&pppoee->l2hdr.s_addr, &srtointra_addr, sizeof(struct ether_addr));
+							//send the Term-ACK packet to peer
+							int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &rcv_pkt_bucket[i], 1);
+							if (retrn != 1 && DEBUG) {
+								RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
+							}
+							int index = __bswap_16(pppoee->session)-1;
+							(session_array[index])->state = STATE_TERM_SENT;
+							continue;
+						} else if (ppplcp->code == CODE_TERM_ACK) {
+							if (DEBUG) {
+								RTE_LOG(INFO, USER1, "=> Termination-ACK Packet received\n");
 							}
 							rte_pktmbuf_free(pkt);
 							continue;
@@ -371,6 +476,8 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 						seen += sizeof(PPPPapReq);
 						char user_name[ETH_JUMBO_LEN];
 						char user_passwd[ETH_JUMBO_LEN];
+						memset(&user_name[0], '\0', sizeof(user_name));
+						memset(&user_passwd[0], '\0', sizeof(user_passwd));
 
 						//get the username and password
 						if (ppppapr->code == CODE_AUT_REQ) {
@@ -398,17 +505,21 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 						}
 
 						//authenticate the username and password
-						//int result = auth(u, u_len, p, p_len);
-						int result = 1;
+						int result = auth(user_name, user_passwd);
+						//int result = 1;
 						if (!result) {
 							//send AUTH NAK
+							int index = __bswap_16(pppoee->session)-1;
+							send_auth_nak((uint8_t)ppppapr->identifier, (uint16_t)index, pppoee->l2hdr.s_addr);
+							
+							//do session termination procdure
+
 						} else {
 							//send AUTH ACK
-							send_auth_ack((uint16_t)1234, pppoee->l2hdr.s_addr);
+							int index = __bswap_16(pppoee->session)-1;
+							send_auth_ack((uint8_t)ppppapr->identifier, (uint16_t)index, pppoee->l2hdr.s_addr);
 						}
 						
-						memset(&user_name[0], 0, sizeof(user_name));
-						memset(&user_passwd[0], 0, sizeof(user_passwd));
 						rte_pktmbuf_free(pkt);
 						continue;
 
@@ -423,7 +534,25 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 						send_proto_reject((uint16_t)PROTO_CCP, pkt);
 						rte_pktmbuf_free(pkt);
 						continue;
+
+					//check if it is a IPv6 control protocol, we reject it
+					} else if (__bswap_16(pppptcl->protocol) == PROTO_IPV6C) {
+
+						if (DEBUG) {
+							RTE_LOG(INFO, USER1, "=> IPV6C Packet received\n");
+						}
+
+						//send a protocol reject
+						send_proto_reject((uint16_t)PROTO_IPV6C, pkt);
+						rte_pktmbuf_free(pkt);
+						continue;
+
+					//check if it is a IPCP packet
 					} else if (__bswap_16(pppptcl->protocol) == PROTO_IPCP) {
+
+						if (DEBUG) {
+							RTE_LOG(INFO, USER1, "=> IPCP Packet received\n");
+						}
 
 						PPPIpcp * pppipcp;
 						pppipcp = rte_pktmbuf_mtod_offset(pkt, PPPIpcp *, sizeof(PPPoEEncap)+seen);
@@ -431,15 +560,17 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy) {
 						PPPIpcpUsed * ipDns;
 						int type = 0;
 
+						//some unexpected error in peer mac address, check it
+						char ethr[50];
+						ethaddr_to_string(ethr, &(pppoee->l2hdr.s_addr));
+						RTE_LOG(INFO, USER1, "=> ether src %s\n", ethr);
 
-char ethr[50];
-ethaddr_to_string(ethr, &(pppoee->l2hdr.s_addr));
-RTE_LOG(INFO, USER1, "=> ether src %s\n", ethr);
 						//check if it is IPCP request
 						if (pppipcp->code == CODE_IPCP_REQ) {
 
-							//check if ip is set for the session, if not, set it now
-							ipDns = get_ip_dns();
+							//get ip and dns, (ip address already stored in session)
+							int index = __bswap_16(pppoee->session)-1;
+							ipDns = get_ip_dns(index);
 
 							unsigned int optseen = 0;
 							unsigned int len = __bswap_16(pppipcp->length)-4;
@@ -503,7 +634,8 @@ RTE_LOG(INFO, USER1, "=> ether src %s\n", ethr);
 
 							//send a ip request back
 							if (type == 2) {
-								send_ip_req(ipDns->ip, pkt);
+								int index = __bswap_16(pppoee->session)-1;
+								send_ip_req((uint16_t)index, pkt);
 							}
 							continue;
 
@@ -515,6 +647,62 @@ RTE_LOG(INFO, USER1, "=> ether src %s\n", ethr);
 							continue;
 						}
 
+					//check if it is a IPv4 packet
+					} else if (__bswap_16(pppptcl->protocol) == PROTO_IPV4) {
+
+						int s_index = __bswap_16(pppoee->session)-1;
+						unsigned int pktseen = 0;
+						struct ipv4_hdr * iphdr;
+						iphdr = (struct ipv4_hdr *) rte_pktmbuf_adj(pkt, sizeof(PPPoEEncap)+seen);
+						pktseen += sizeof(struct ipv4_hdr);
+						struct ether_hdr * l2hdr;
+						l2hdr = (struct ether_hdr *) rte_pktmbuf_prepend(pkt, sizeof(struct ether_hdr));
+
+						//will be changed later
+						memcpy(&l2hdr->d_addr, &task2_addr, sizeof(struct ether_addr));
+        					memcpy(&l2hdr->s_addr, &srtointra_addr, sizeof(struct ether_addr));
+						l2hdr->ether_type = __bswap_16(ETHER_IPV4);
+						pktseen += sizeof(struct ether_hdr);
+						
+						//check if it is a tcp packet
+						if (iphdr->next_proto_id == PROTO_TCP) {
+							if (DEBUG) {
+								RTE_LOG(INFO, USER1, "=> TCP Packet received\n");
+							}
+							//will be filled later
+
+						//check if it is a udp packet 
+						} else if (iphdr->next_proto_id == PROTO_UDP) {
+							if (DEBUG) {
+								RTE_LOG(INFO, USER1, "=> UDP Packet received\n");
+							}
+							struct udp_hdr * udphdr;
+							udphdr = rte_pktmbuf_mtod_offset(pkt, struct udp_hdr *, pktseen);
+							//seen += sizeof(struct udp_hdr);
+							int c_index;
+							if ((c_index = check_and_set_connection(s_index, __bswap_16(udphdr->src_port))) < 0) {
+								if (DEBUG) {
+									RTE_LOG(INFO, USER1, "=> Can not allocate connection, dropping...\n");
+								}
+								rte_pktmbuf_free(pkt);
+								continue;
+							}
+							udphdr->src_port = __bswap_16((connection_array[c_index])->port_assnd);
+							//not sure if to calculate udp checksum
+						}
+						iphdr->time_to_live--;
+						iphdr->hdr_checksum = 0;
+						iphdr->hdr_checksum = rte_ipv4_cksum(iphdr);
+						//send the packet
+						int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &rcv_pkt_bucket[i], 1); 
+						if (retrn != 1 && DEBUG) {
+							RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
+						}
+
+						//will be removed, added for testing
+						//send_term_req((uint16_t)s_index);
+						//send_padt((uint16_t)s_index);
+						continue;
 					}
 				}
 
@@ -525,10 +713,10 @@ RTE_LOG(INFO, USER1, "=> ether src %s\n", ethr);
 				continue;
 			}
 
-			//=== END Your code
+			//=== END of packet parsing
 
 			int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &rcv_pkt_bucket[i], 1);
-				//For better performance, you could also bulk-send multiple packets here.
+			//For better performance, you could also bulk-send multiple packets here.
 			if (retrn != 1) {
 				RTE_LOG(INFO, USER1, "    TX burst failed with error code %i.\n", retrn);
 			}
@@ -544,7 +732,7 @@ RTE_LOG(INFO, USER1, "=> ether src %s\n", ethr);
 /*
  *Function to send a config request
  */
-void send_config_req(uint8_t type, uint16_t session_id, struct ether_addr client_l2addr) {
+void send_config_req(uint8_t type, uint16_t session_index, struct ether_addr client_l2addr) {
 
 	if (DEBUG) {
 		RTE_LOG(INFO, USER1, "=> called send_config_req for type %i.\n", (int) type);
@@ -557,7 +745,7 @@ void send_config_req(uint8_t type, uint16_t session_id, struct ether_addr client
 	pppoeer->l2hdr.ether_type = __bswap_16(ETHER_SESSION);
         pppoeer->ver = PPPOE_VER;
         pppoeer->type = PPPOE_TYPE;
-        pppoeer->session = __bswap_16(session_id);
+        pppoeer->session = __bswap_16((session_array[session_index])->session_id);
 	pppoeer->code = CODE_SESS;
         pppoeer->length = 0;
 
@@ -568,8 +756,8 @@ void send_config_req(uint8_t type, uint16_t session_id, struct ether_addr client
 
 	PPPLcp * ppplcps = (PPPLcp *) rte_pktmbuf_append(acpkt, sizeof(PPPLcp));
 	ppplcps->code = CODE_CONF_REQ;
-	//for now keep a temp id
-	ppplcps->identifier = 0x04;
+	ppplcps->identifier = (session_array[session_index])->auth_ident;
+	((session_array[session_index])->auth_ident)++;
 	ppplcps->length = 0;
 	uint16_t ppplcp_length = 0;
 	pppoe_payload_legth += (uint16_t) sizeof(PPPLcp);
@@ -612,13 +800,12 @@ void send_config_req(uint8_t type, uint16_t session_id, struct ether_addr client
 /*
  *Function to send an Echo-request
  */
-void send_echo_req(uint16_t session_id, struct ether_addr client_l2addr) {
+void send_echo_req(uint16_t session_index, struct ether_addr client_l2addr) {
 
 	if (DEBUG) {
 		RTE_LOG(INFO, USER1, "=> called send_echo_req\n");
 	}
 	//generate a PPPoE packet
-
 	struct rte_mbuf * acpkt = rte_pktmbuf_alloc(mempool);
 	PPPoEEncap * pppoeer = (PPPoEEncap *) rte_pktmbuf_append(acpkt, sizeof(PPPoEEncap));
         memcpy(&pppoeer->l2hdr.d_addr, &client_l2addr, sizeof(struct ether_addr));
@@ -626,7 +813,7 @@ void send_echo_req(uint16_t session_id, struct ether_addr client_l2addr) {
 	pppoeer->l2hdr.ether_type = __bswap_16(ETHER_SESSION);
         pppoeer->ver = PPPOE_VER;
         pppoeer->type = PPPOE_TYPE;
-        pppoeer->session = __bswap_16(session_id);
+        pppoeer->session = __bswap_16((session_array[session_index])->session_id);
 	pppoeer->code = CODE_SESS;
         pppoeer->length = 0;
 
@@ -637,11 +824,11 @@ void send_echo_req(uint16_t session_id, struct ether_addr client_l2addr) {
 
 	PPPLcpMagic * ppplcpms = (PPPLcpMagic *) rte_pktmbuf_append(acpkt, sizeof(PPPLcpMagic));
 	ppplcpms->code = CODE_ECHO_REQ;
-	//for now keep a temp id
-	ppplcpms->identifier = 0x05;
+	ppplcpms->identifier = (session_array[session_index])->echo_ident;
+	((session_array[session_index])->echo_ident)++;
 	ppplcpms->length = 0;
 	//for now add a temp magic no:
-	ppplcpms->magic_number = __bswap_16(0x12345668);
+	ppplcpms->magic_number = __bswap_16(0x12345678);
 	uint16_t ppplcp_length = 0;
 	pppoe_payload_legth += (uint16_t) sizeof(PPPLcpMagic);
 	ppplcp_length += (uint16_t) sizeof(PPPLcpMagic);
@@ -659,7 +846,7 @@ void send_echo_req(uint16_t session_id, struct ether_addr client_l2addr) {
 /*
  *Function to send an Authentication ACK 
  */
-void send_auth_ack(uint16_t session_id, struct ether_addr client_l2addr) {
+void send_auth_ack(uint8_t identifier, uint16_t session_index, struct ether_addr client_l2addr) {
 
 	if (DEBUG) {
 		RTE_LOG(INFO, USER1, "=> called send_auth_ack\n");
@@ -672,7 +859,7 @@ void send_auth_ack(uint16_t session_id, struct ether_addr client_l2addr) {
 	pppoeer->l2hdr.ether_type = __bswap_16(ETHER_SESSION);
         pppoeer->ver = PPPOE_VER;
         pppoeer->type = PPPOE_TYPE;
-        pppoeer->session = __bswap_16(session_id);
+        pppoeer->session = __bswap_16((session_array[session_index])->session_id);
 	pppoeer->code = CODE_SESS;
         pppoeer->length = 0;
 
@@ -683,8 +870,51 @@ void send_auth_ack(uint16_t session_id, struct ether_addr client_l2addr) {
 
 	PPPPapAck * ppppapas = (PPPPapAck *) rte_pktmbuf_append(acpkt, sizeof(PPPPapAck));
 	ppppapas->code = CODE_AUT_ACK;
-	//for now add some identifier
-	ppppapas->identifier = 0x05;
+	ppppapas->identifier = identifier;
+	ppppapas->length = 0;
+	ppppapas->idms_length = 0;
+	uint16_t ppppap_length = 0;
+	pppoe_payload_legth += (uint16_t) sizeof(PPPPapAck);
+	ppppap_length += (uint16_t) sizeof(PPPPapAck);
+
+	ppppapas->length = __bswap_16(ppppap_length);
+        pppoeer->length = __bswap_16(pppoe_payload_legth);
+	//send the packet
+	int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
+	if (retrn != 1 && DEBUG) {
+  		RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
+       	}
+}
+
+
+/*
+ *Function to send an Authentication NAK 
+ */
+void send_auth_nak(uint8_t identifier, uint16_t session_index, struct ether_addr client_l2addr) {
+
+	if (DEBUG) {
+		RTE_LOG(INFO, USER1, "=> called send_auth_nak\n");
+	}
+	//generate a PPPoE packet
+	struct rte_mbuf * acpkt = rte_pktmbuf_alloc(mempool);
+	PPPoEEncap * pppoeer = (PPPoEEncap *) rte_pktmbuf_append(acpkt, sizeof(PPPoEEncap));
+        memcpy(&pppoeer->l2hdr.d_addr, &client_l2addr, sizeof(struct ether_addr));
+        memcpy(&pppoeer->l2hdr.s_addr, &srtointra_addr, sizeof(struct ether_addr));
+	pppoeer->l2hdr.ether_type = __bswap_16(ETHER_SESSION);
+        pppoeer->ver = PPPOE_VER;
+        pppoeer->type = PPPOE_TYPE;
+        pppoeer->session = __bswap_16((session_array[session_index])->session_id);
+	pppoeer->code = CODE_SESS;
+        pppoeer->length = 0;
+
+	uint16_t pppoe_payload_legth = 0;
+	PPPEncap * pppptcls = (PPPEncap *) rte_pktmbuf_append(acpkt, sizeof(PPPEncap));
+	pppptcls->protocol = __bswap_16(PROTO_PAP);
+	pppoe_payload_legth += (uint16_t) sizeof(PPPEncap);
+
+	PPPPapAck * ppppapas = (PPPPapAck *) rte_pktmbuf_append(acpkt, sizeof(PPPPapAck));
+	ppppapas->code = CODE_AUT_NAK;
+	ppppapas->identifier = identifier;
 	ppppapas->length = 0;
 	ppppapas->idms_length = 0;
 	uint16_t ppppap_length = 0;
@@ -707,7 +937,7 @@ void send_auth_ack(uint16_t session_id, struct ether_addr client_l2addr) {
 void send_proto_reject(uint16_t type, struct rte_mbuf* pkt) {
 
 	if (DEBUG) {
-		RTE_LOG(INFO, USER1, "=> called send_auth_ack\n");
+		RTE_LOG(INFO, USER1, "=> called send_proto_reject\n");
 	}
 	//generate a PPPoE packet
 	struct rte_mbuf * acpkt = rte_pktmbuf_alloc(mempool);
@@ -725,8 +955,8 @@ void send_proto_reject(uint16_t type, struct rte_mbuf* pkt) {
 
 	PPPLcpRjct * ppplcprjct = (PPPLcpRjct *) rte_pktmbuf_append(acpkt, sizeof(PPPLcpRjct));
 	ppplcprjct->code = CODE_PROT_REJ;
-	//for now add some identifier
-	ppplcprjct->identifier = 0x05;
+	//keep the identifier zero
+	ppplcprjct->identifier = 0x00;
 	ppplcprjct->length = 0;
 	ppplcprjct->protocol = __bswap_16(type);
 	uint16_t pppprjct_length = 0;
@@ -754,7 +984,7 @@ void send_proto_reject(uint16_t type, struct rte_mbuf* pkt) {
  *Function to send a ip request
  *This function should be called after swapping the mac addresses to send back 
  */
-void send_ip_req(uint32_t ip, struct rte_mbuf* pkt) {
+void send_ip_req(uint16_t session_index, struct rte_mbuf* pkt) {
 
 	if (DEBUG) {
 		RTE_LOG(INFO, USER1, "=> called send_ip_req\n");
@@ -773,8 +1003,8 @@ void send_ip_req(uint32_t ip, struct rte_mbuf* pkt) {
 
 	PPPIpcp * pppipcp = (PPPIpcp *) rte_pktmbuf_append(acpkt, sizeof(PPPIpcp));
 	pppipcp->code = CODE_IPCP_REQ;
-	//for now add some identifier
-	pppipcp->identifier = 0x05;
+	pppipcp->identifier = (session_array[session_index])->ip_ident;
+	((session_array[session_index])->ip_ident)++;
 	pppipcp->length = 0;
 	uint16_t pppipcp_length = 0;
 	pppoe_payload_legth += (uint16_t) sizeof(PPPIpcp);
@@ -783,12 +1013,119 @@ void send_ip_req(uint32_t ip, struct rte_mbuf* pkt) {
 	PPPIpcpOptions * optn = (PPPIpcpOptions *) rte_pktmbuf_append(acpkt, sizeof(PPPIpcpOptions));	
 	optn->type = TYPE_IP;
 	optn->length = 6; //always will be 6	
-	optn->value = 0x0500000a;
+	optn->value = get_server_ip();
 	pppoe_payload_legth += (uint16_t) sizeof(PPPIpcpOptions);
 	pppipcp_length += (uint16_t) sizeof(PPPIpcpOptions);
 
 	pppipcp->length = __bswap_16(pppipcp_length);
         pppoeer->length = __bswap_16(pppoe_payload_legth);
+	//send the packet
+	int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
+	if (retrn != 1 && DEBUG) {
+  		RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
+       	}
+}
+
+
+/*
+ *Function to send termination request
+ */
+void send_term_req(uint16_t index) {
+	if (DEBUG) {
+		RTE_LOG(INFO, USER1, "=> called send_term_req\n");
+	}
+	//generate a PPPoE packet
+	struct rte_mbuf * acpkt = rte_pktmbuf_alloc(mempool);
+	PPPoEEncap * pppoeer = (PPPoEEncap *) rte_pktmbuf_append(acpkt, sizeof(PPPoEEncap));
+        memcpy(&pppoeer->l2hdr.d_addr, &((session_array[index])->client_mac_addr), sizeof(struct ether_addr));
+        memcpy(&pppoeer->l2hdr.s_addr, &srtointra_addr, sizeof(struct ether_addr));
+	pppoeer->l2hdr.ether_type = __bswap_16(ETHER_SESSION);
+        pppoeer->ver = PPPOE_VER;
+        pppoeer->type = PPPOE_TYPE;
+        pppoeer->session = __bswap_16((session_array[index])->session_id);
+	pppoeer->code = CODE_SESS;
+        pppoeer->length = 0;
+
+	uint16_t pppoe_payload_legth = 0;
+	PPPEncap * pppptcls = (PPPEncap *) rte_pktmbuf_append(acpkt, sizeof(PPPEncap));
+	pppptcls->protocol = __bswap_16(PROTO_LCP);
+	pppoe_payload_legth += (uint16_t) sizeof(PPPEncap);
+
+	PPPLcp * ppplcps = (PPPLcp *) rte_pktmbuf_append(acpkt, sizeof(PPPLcp));
+	ppplcps->code = CODE_TERM_REQ;
+	ppplcps->identifier = 0x00; //always set to 0
+	ppplcps->length = 0;
+	uint16_t ppplcp_length = 0;
+	pppoe_payload_legth += (uint16_t) sizeof(PPPLcp);
+	ppplcp_length += (uint16_t) sizeof(PPPLcp);
+
+	char * data = "server closing";
+	uint16_t data_len = 14; //always will be 14
+	char * p_data = (char *) rte_pktmbuf_append(acpkt, data_len);
+	memcpy(p_data, data, data_len);
+	pppoe_payload_legth += data_len;
+	ppplcp_length += data_len;
+
+	ppplcps->length = __bswap_16(ppplcp_length);
+        pppoeer->length = __bswap_16(pppoe_payload_legth);
+	//send the packet
+	int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
+	if (retrn != 1 && DEBUG) {
+  		RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
+       	}
+	(session_array[index])->state = STATE_TERM_SENT;
+}
+
+
+/*
+ *Function to send PADT
+ */
+void send_padt(uint16_t index) {
+	if (DEBUG) {
+		RTE_LOG(INFO, USER1, "=> called send_padt\n");
+	}
+	//generate a PPPoE packet
+	struct rte_mbuf * acpkt = rte_pktmbuf_alloc(mempool);
+	PPPoEEncap * pppoeer = (PPPoEEncap *) rte_pktmbuf_append(acpkt, sizeof(PPPoEEncap));
+        memcpy(&pppoeer->l2hdr.d_addr, &((session_array[index])->client_mac_addr), sizeof(struct ether_addr));
+        memcpy(&pppoeer->l2hdr.s_addr, &srtointra_addr, sizeof(struct ether_addr));
+	pppoeer->l2hdr.ether_type = __bswap_16(ETHER_DISCOVERY);
+        pppoeer->ver = PPPOE_VER;
+        pppoeer->type = PPPOE_TYPE;
+        pppoeer->session = __bswap_16((session_array[index])->session_id);
+	pppoeer->code = CODE_PADT;
+        pppoeer->length = 0;
+
+	PPPoETag * pppoetr;
+	unsigned int pppoe_payload_length = 0; 
+	//add host unique tag
+	pppoetr = (PPPoETag *) rte_pktmbuf_append(acpkt, sizeof(PPPoETag));
+        pppoetr->type = __bswap_16((uint16_t) (TYPE_HOST_UNIQ));
+	pppoetr->length = __bswap_16((uint16_t) ((session_array[index])->hu_len));
+	char * hu_value = (char *) rte_pktmbuf_append(acpkt, (session_array[index])->hu_len);
+	memcpy(hu_value, (session_array[index])->host_uniq, (session_array[index])->hu_len);
+	pppoe_payload_length += sizeof(PPPoETag) + (session_array[index])->hu_len;
+
+	//add generic error
+	pppoetr = (PPPoETag *) rte_pktmbuf_append(acpkt, sizeof(PPPoETag));
+        pppoetr->type = __bswap_16((uint16_t) (TYPE_GENERIC_ERROR));
+	char * error = "PPPOE server: sever closing";
+	pppoetr->length = __bswap_16((uint16_t) (27)); //always will be 27
+	char * error_code = (char *) rte_pktmbuf_append(acpkt, 27);
+	memcpy(error_code, error, 27);
+	pppoe_payload_length += sizeof(PPPoETag) + 27;
+
+	//add cookie
+	pppoetr = (PPPoETag *) rte_pktmbuf_append(acpkt, sizeof(PPPoETag));
+        pppoetr->type = __bswap_16((uint16_t) (TYPE_AC_COOKIE));
+	char * CKname = "CKNAME";
+	pppoetr->length = __bswap_16((uint16_t) (sizeof(CKname)));
+	char * ck_value = (char *) rte_pktmbuf_append(acpkt, sizeof(CKname));
+	memcpy(ck_value, CKname, sizeof(CKname));
+	pppoe_payload_length += sizeof(PPPoETag) + sizeof(CKname);
+
+	pppoeer->length = __bswap_16((uint16_t) (pppoe_payload_length));
+
 	//send the packet
 	int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
 	if (retrn != 1 && DEBUG) {
