@@ -23,19 +23,32 @@ const struct ether_addr task3_addr = {.addr_bytes={0x00,0x15,0x17,0x03,0x00,0x03
 //Authentication protocol, 0 for PAP, 1 for CHAP (currently PAP only)
 #define AUTH_PROTO	0
 
+//session and connection idle timeout  (in minute)
+double sess_timeout = 0.1; //minimum 5 hr (300 min)
+double conn_timeout = 0.05; //minimum 0.5 min 
+
 /***********************************************************
  *Server specific declarations
  *Do not modify any structures 
  ***********************************************************/
+#include<pthread.h>
+#include<time.h>
+#include<math.h>
 
 extern struct rte_mempool* mempool;
+extern pthread_mutex_t conn_lock;
 
 #define BURSTLEN	4
 #define ETH_JUMBO_LEN	20
 
+//protocols
+#define PROTO_TCP 	0x06
+#define PROTO_UDP 	0x11
+
 //ETHER_TYPE fields
 #define ETHER_DISCOVERY	0x8863
 #define ETHER_SESSION	0x8864
+#define ETHER_IPV4	0x0800
 
 //PPPoE version and type
 #define PPPOE_VER	0x01
@@ -84,6 +97,8 @@ typedef struct __attribute__((__packed__)) {
 #define	PROTO_CHAP	0xc223
 #define	PROTO_CCP	0x80fd
 #define	PROTO_IPCP	0x8021
+#define PROTO_IPV6C 	0x8057
+#define PROTO_IPV4	0x0021
 
 //PPP eccapsulation structure
 typedef struct __attribute__((__packed__)) {
@@ -211,6 +226,7 @@ typedef struct __attribute__((__packed__)) {
 #define STATE_CONF_AUTH_SENT	0x02
 #define	STATE_AUTH_ACK_SENT	0x03
 #define STATE_AUTH_ECHO_SENT	0x04
+#define STATE_TERM_SENT		0x05
 
 //connection index structure per session
 struct conn_index {
@@ -224,16 +240,55 @@ typedef struct __attribute__((__packed__)) {
 	struct ether_addr client_mac_addr;
 	uint32_t client_ipv4_addr;
 	unsigned int session_id:16;
+	char * host_uniq;
+	uint16_t hu_len;
 	struct conn_index * index;
 	unsigned int auth_ident:8;
 	unsigned int echo_ident:8;
+	unsigned int ip_ident:8;
 	unsigned int mru;
+	time_t time;
+	uint8_t active;
 } Session;
 
+extern Session ** session_array; 
+
+//connection structure
+typedef struct __attribute__((__packed__)) {
+	uint16_t session_index;
+	uint16_t port_origl;
+	uint16_t port_assnd;
+	time_t time;
+	uint8_t active;
+} Connection;
+
+extern Connection ** connection_array;
+
 //functions
-void send_config_req(uint8_t type, uint16_t session_id, struct ether_addr client_l2addr);
-void send_echo_req(uint16_t session_id, struct ether_addr client_l2addr);
-void send_auth_ack(uint16_t session_id, struct ether_addr client_l2addr);
+void send_config_req(uint8_t type, uint16_t session_index, struct ether_addr client_l2addr);
+void send_echo_req(uint16_t session_index, struct ether_addr client_l2addr);
+void send_auth_ack(uint8_t identifier, uint16_t session_index, struct ether_addr client_l2addr);
+void send_auth_nak(uint8_t identifier, uint16_t session_index, struct ether_addr client_l2addr);
 void send_proto_reject(uint16_t type, struct rte_mbuf * pkt);
-PPPIpcpUsed * get_ip_dns();
-void send_ip_req(uint32_t ip, struct rte_mbuf* pkt);
+PPPIpcpUsed * get_ip_dns(int session_index);
+uint32_t get_ip();
+uint32_t get_server_ip();
+void send_ip_req(uint16_t session_index, struct rte_mbuf* pkt);
+int ethaddr_to_string(char* str2write, const struct ether_addr* eth_addr);
+int create_session(struct ether_addr client_l2addr);
+int create_connection(uint16_t session_index, uint16_t port);
+int get_sslot();
+int get_cslot();
+int fill_session(int index, struct ether_addr client_l2addr);
+void update_session(int index, struct ether_addr client_l2addr);
+int fill_connection(int c_index, uint16_t s_index, uint16_t port);
+void delete_session(int index);
+void delete_connection(int index);
+int check_and_set_connection(int s_index, uint16_t port);
+uint32_t check_and_set_ip();
+Connection * get_client_connection(uint16_t port);
+void send_term_req(uint16_t index);
+void send_padt(uint16_t s_index);
+void * check_and_free_session();
+void * check_and_free_connection();
+int auth(char * username, char * password);

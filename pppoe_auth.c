@@ -142,8 +142,8 @@ void createHashTable()
 {
     char *username, *password;
     char *delimiter = ":";
-    // path of the file must be changed as per the deployment
-    const char filename[] = "/home/nfvlab/dpdk/data.txt";
+    // file name in windows format, when running in linux, use '/'
+    const char filename[] = "./passwd";
     // opening file in read (r) mode
     FILE *file = fopen ( filename, "r" );
     if ( file != NULL )
@@ -167,23 +167,9 @@ void createHashTable()
     return;
 }
 
-int main()
-{
-    /*
-        free all allocated memory
-    */
-    char *username = malloc(sizeof(char));
-    char *password = malloc(sizeof(char));
+
+int auth(char * username, char * password) {
     hashTable = (struct Hash *)calloc(TOTAL_ROW, sizeof (struct Hash));
     createHashTable();
-    printf(" Enter user name : ");
-    scanf("%s", username);
-    printf("\n Enter password : ");
-    scanf("%s", password);
-    printf("\n user input -> user name : %s and password : %s", username, password);
-    printf("\nreturn result : %d \n", authenticate(username, password));
-    free(username);
-    free(password);
-    free(hashTable);
-    return 0;
+    return(authenticate(username, password));
 }

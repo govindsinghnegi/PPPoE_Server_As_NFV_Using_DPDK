@@ -65,9 +65,12 @@
 
 #include "pppoe.h"
 #include "ippool.c"
+#include "session.c"
 #include "lab_task.c"
+#include "pppoe_auth.c"
 
 struct rte_mempool* mempool;
+pthread_mutex_t conn_lock;
 
 static unsigned tz_getMBufMempoolSize(uint8_t ports_c, uint8_t lcores_c, uint8_t rx_queues_c, uint8_t tx_queues_c) {
 
