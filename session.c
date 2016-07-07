@@ -1,6 +1,5 @@
 //variables for session maintnance
 int * free_sessions = NULL;
-static int session_index = 0;
 static int free_session_index = 0;
 Session ** session_array = NULL;
 Session ** temps_array;
@@ -203,7 +202,9 @@ void delete_session(int index) {
 			ipkeep->next = NULL;
 		}
 		//free host unique
-		free(session_array[index]->host_uniq); 
+		if (session_array[index]->host_uniq != NULL) {
+			free(session_array[index]->host_uniq);
+		}
 		//free the session
 		free(session_array[index]);
 		session_array = (Session **) realloc(session_array, (session_index-1) * sizeof(Session *));
@@ -224,7 +225,9 @@ void delete_session(int index) {
 		}
 
 		//free host unique
-		free(session_array[index]->host_uniq);
+		if (session_array[index]->host_uniq != NULL) {
+			free(session_array[index]->host_uniq);
+		}
 		(session_array[index])->hu_len = 0;
 		(session_array[index])->active = 0;
 	}

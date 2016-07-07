@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "pppoeconfig.h"
 
 #define MAX_STR_LEN 100
 #define MAX_INT_LEN 6
@@ -43,7 +42,7 @@ ConfigParameter * getConfigParameters(){
     char ipStr[MAX_STR_LEN];
 
     int tracker = 1;
-    const char filename[] = "/path/to/pppoe.conf";
+    const char filename[] = "./pppoe.conf";
     FILE *file = fopen ( filename, "r" );
     if ( file != NULL )
     {
@@ -95,6 +94,13 @@ ConfigParameter * getConfigParameters(){
                    sscanf(temp, "%lf", &configParameter->sessionTimeout);
                 }else{
                     sscanf(temp, "%lf", &configParameter->connectionTimeout);
+                }
+            }else if((tracker == 32) || (tracker == 34)){
+            	strcpy(ipStr,strtok(NULL, "\n"));
+                if(tracker == 32){                
+                convertStrToIP(ipStr, '.', '\0', configParameter->routerIpStart, 4, 10);
+                }else{
+                convertStrToIP(ipStr, '.', '\0', configParameter->routerIpEnd, 4, 10);
                 }
             }
             tracker++;
