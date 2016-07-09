@@ -61,24 +61,25 @@ static uint8_t pppoe_enabled_ports[RTE_MAX_ETHPORTS];
 #define MAC_LEN 6
 #define IP_LEN 4
 
-typedef struct ConfigParam {
-	char serviceName[MAX_STR_LEN];
-	char acName[MAX_STR_LEN];
-	int isDebug;
-	int authProtocol;
-	unsigned char servToIntraMac[MAC_LEN];
-	unsigned char servToInterMac[MAC_LEN];
-	unsigned char routerMac[MAC_LEN];
-	unsigned char servToIntraIP[IP_LEN];
-	unsigned char servToInterIP[IP_LEN];
-	unsigned char routerIP[IP_LEN];
-	unsigned char ipAddressPool[5];
-	unsigned char primaryDns[IP_LEN];
-	unsigned char secondaryDns[IP_LEN];
-	double sessionTimeout;
-	double connectionTimeout;
-	unsigned char routerIpStart[IP_LEN];
-	unsigned char routerIpEnd[IP_LEN];
+typedef struct ConfigParam
+{
+    char serviceName[MAX_STR_LEN];
+    char acName[MAX_STR_LEN];
+    int isDebug;
+    int authProtocol;
+    unsigned char servToIntraMac[MAC_LEN];
+    unsigned char servToInterMac[MAC_LEN];
+    unsigned char routerMac[MAC_LEN];
+    unsigned char servToIntraIP[IP_LEN];
+    unsigned char servToInterIP[IP_LEN];
+    unsigned char routerIP[IP_LEN];
+    unsigned char ipAddressPool[5];
+    unsigned char primaryDns[IP_LEN];
+    unsigned char secondaryDns[IP_LEN];
+    double sessionTimeout;
+    double connectionTimeout;
+    unsigned char routerIpStart[IP_LEN];
+    unsigned char routerIpEnd[IP_LEN];
 } ConfigParameter;
 
 ConfigParameter * getConfigParameters();
@@ -105,21 +106,23 @@ extern pthread_mutex_t conn_lock;
 //PPPoE codes
 #define CODE_PADI	0x09
 #define CODE_PADO	0x07
-#define CODE_PADR	0x19	
+#define CODE_PADR	0x19
 #define CODE_PADS	0x65
 #define CODE_PADT	0xa7
 #define CODE_SESS	0x00
 
 //PPPoE encapsulation structure
 typedef struct
-	__attribute__((__packed__)) {
-		struct ether_hdr l2hdr;
-		unsigned int type :4;
-		unsigned int ver :4;
-		unsigned int code :8;
-		unsigned int session :16;
-		unsigned int length :16;
-	} PPPoEEncap;
+__attribute__((__packed__))
+{
+    struct ether_hdr l2hdr;
+    unsigned int type :4;
+    unsigned int ver :4;
+    unsigned int code :8;
+    unsigned int session :16;
+    unsigned int length :16;
+}
+PPPoEEncap;
 
 //PPPoE tag types
 #define TYPE_END_OF_LIST 	0x0000
@@ -134,11 +137,13 @@ typedef struct
 #define TYPE_GENERIC_ERROR	0x0203
 
 //PPPoE tag structure
-	typedef struct
-		__attribute__((__packed__)) {
-			unsigned int type :16;
-			unsigned int length :16;
-		} PPPoETag;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int type :16;
+    unsigned int length :16;
+}
+PPPoETag;
 
 //PPP protocols
 #define PROTO_LCP	0xc021
@@ -151,10 +156,12 @@ typedef struct
 #define PROTO_IPV4	0x0021
 
 //PPP eccapsulation structure
-		typedef struct
-			__attribute__((__packed__)) {
-				unsigned int protocol :16;
-			} PPPEncap;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int protocol :16;
+}
+PPPEncap;
 
 //PPP lcp codes
 #define CODE_CONF_REQ	0x01
@@ -167,33 +174,39 @@ typedef struct
 #define CODE_PROT_REJ	0x08
 #define CODE_ECHO_REQ	0x09
 #define CODE_ECHO_REP	0x0a
-#define CODE_DISC_REQ	0x0b 
+#define CODE_DISC_REQ	0x0b
 
 //PPP LCP structure
-			typedef struct
-				__attribute__((__packed__)) {
-					unsigned int code :8;
-					unsigned int identifier :8;
-					unsigned int length :16;
-				} PPPLcp;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int code :8;
+    unsigned int identifier :8;
+    unsigned int length :16;
+}
+PPPLcp;
 
 //PPP LCP Echo structure
-				typedef struct
-					__attribute__((__packed__)) {
-						unsigned int code :8;
-						unsigned int identifier :8;
-						unsigned int length :16;
-						unsigned int magic_number :32;
-					} PPPLcpMagic;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int code :8;
+    unsigned int identifier :8;
+    unsigned int length :16;
+    unsigned int magic_number :32;
+}
+PPPLcpMagic;
 
 //PPP LCP reject structure
-					typedef struct
-						__attribute__((__packed__)) {
-							unsigned int code :8;
-							unsigned int identifier :8;
-							unsigned int length :16;
-							unsigned int protocol :16;
-						} PPPLcpRjct;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int code :8;
+    unsigned int identifier :8;
+    unsigned int length :16;
+    unsigned int protocol :16;
+}
+PPPLcpRjct;
 
 //PPP LCP option types
 #define TYPE_MRU	0x01
@@ -204,27 +217,33 @@ typedef struct
 #define TYPE_ACC	0x08
 
 //PPP LCP options
-						typedef struct
-							__attribute__((__packed__)) {
-								unsigned int type :8;
-								unsigned int length :8;
-							} PPPLcpOptions;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int type :8;
+    unsigned int length :8;
+}
+PPPLcpOptions;
 
 //PPP LCP options general structure
-							typedef struct
-								__attribute__((__packed__)) {
-									unsigned int type :8;
-									unsigned int length :8;
-									unsigned int value :16;
-								} PPPLcpOptionsGenl;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int type :8;
+    unsigned int length :8;
+    unsigned int value :16;
+}
+PPPLcpOptionsGenl;
 
 //PPP LCP options magic structure
-								typedef struct
-									__attribute__((__packed__)) {
-										unsigned int type :8;
-										unsigned int length :8;
-										unsigned int value :32;
-									} PPPLcpOptionsMagic;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int type :8;
+    unsigned int length :8;
+    unsigned int value :32;
+}
+PPPLcpOptionsMagic;
 
 //PPP PAP codes
 #define CODE_AUT_REQ	0x01
@@ -232,21 +251,25 @@ typedef struct
 #define CODE_AUT_NAK	0x03
 
 //PPP PAP REQ structure
-									typedef struct
-										__attribute__((__packed__)) {
-											unsigned int code :8;
-											unsigned int identifier :8;
-											unsigned int length :16;
-										} PPPPapReq;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int code :8;
+    unsigned int identifier :8;
+    unsigned int length :16;
+}
+PPPPapReq;
 
 //PPP PAP ACK structure
-										typedef struct
-											__attribute__((__packed__)) {
-												unsigned int code :8;
-												unsigned int identifier :8;
-												unsigned int length :16;
-												unsigned int idms_length :8;
-											} PPPPapAck;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int code :8;
+    unsigned int identifier :8;
+    unsigned int length :16;
+    unsigned int idms_length :8;
+}
+PPPPapAck;
 
 //PPP IPCP codes
 #define CODE_IPCP_REQ	0x01
@@ -254,12 +277,14 @@ typedef struct
 #define CODE_IPCP_NAK	0x03
 
 //PPP IPCP structure
-											typedef struct
-												__attribute__((__packed__)) {
-													unsigned int code :8;
-													unsigned int identifier :8;
-													unsigned int length :16;
-												} PPPIpcp;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int code :8;
+    unsigned int identifier :8;
+    unsigned int length :16;
+}
+PPPIpcp;
 
 //PPP IPCP options
 #define TYPE_IP		0x03
@@ -267,20 +292,24 @@ typedef struct
 #define TYPE_DNS_SEC	0x83
 
 //PPP IPCP options structure
-												typedef struct
-													__attribute__((__packed__)) {
-														unsigned int type :8;
-														unsigned int length :8;
-														unsigned int value :32;
-													} PPPIpcpOptions;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int type :8;
+    unsigned int length :8;
+    unsigned int value :32;
+}
+PPPIpcpOptions;
 
 //PPP IPCP used values structure
-													typedef struct
-														__attribute__((__packed__)) {
-															uint32_t ip;
-															uint32_t dns1;
-															uint32_t dns2;
-														} PPPIpcpUsed;
+typedef struct
+__attribute__((__packed__))
+{
+    uint32_t ip;
+    uint32_t dns1;
+    uint32_t dns2;
+}
+PPPIpcpUsed;
 
 //session states
 #define STATE_SESS_CRTD		0x00
@@ -291,112 +320,117 @@ typedef struct
 #define STATE_TERM_SENT		0x05
 
 //connection index structure per session
-														struct conn_index {
-															unsigned int index;
-															struct conn_index * next;
-														};
+struct conn_index
+{
+    unsigned int index;
+    struct conn_index * next;
+};
 
 //session structure
-														typedef struct
-															__attribute__((__packed__)) {
-																unsigned int state :8;
-																struct ether_addr client_mac_addr;
-																uint32_t client_ipv4_addr;
-																unsigned int session_id :16;
-																char * host_uniq;
-																uint16_t hu_len;
-																struct conn_index * index;
-																unsigned int auth_ident :8;
-																unsigned int echo_ident :8;
-																unsigned int ip_ident :8;
-																unsigned int mru;
-																time_t time;
-																uint8_t active;
-															} Session;
+typedef struct
+__attribute__((__packed__))
+{
+    unsigned int state :8;
+    struct ether_addr client_mac_addr;
+    uint32_t client_ipv4_addr;
+    unsigned int session_id :16;
+    char * host_uniq;
+    uint16_t hu_len;
+    struct conn_index * index;
+    unsigned int auth_ident :8;
+    unsigned int echo_ident :8;
+    unsigned int ip_ident :8;
+    unsigned int mru;
+    time_t time;
+    uint8_t active;
+}
+Session;
 
-															extern Session ** session_array;
-															static int session_index = 0;
+extern Session ** session_array;
+static int session_index = 0;
 
 //connection structure
-															typedef struct
-																__attribute__((__packed__)) {
-																	uint16_t session_index;
-																	uint16_t port_origl;
-																	uint16_t port_assnd;
-																	time_t time;
-																	uint8_t active;
-																} Connection;
+typedef struct
+__attribute__((__packed__))
+{
+    uint16_t session_index;
+    uint16_t port_origl;
+    uint16_t port_assnd;
+    time_t time;
+    uint8_t active;
+}
+Connection;
 
-																extern Connection ** connection_array;
+extern Connection ** connection_array;
 
 //functions
-																void send_config_req(
-																		uint8_t type,
-																		uint16_t session_index,
-																		struct ether_addr client_l2addr);
-																void send_echo_req(
-																		uint16_t session_index,
-																		struct ether_addr client_l2addr);
-																void send_auth_ack(
-																		uint8_t identifier,
-																		uint16_t session_index,
-																		struct ether_addr client_l2addr);
-																void send_auth_nak(
-																		uint8_t identifier,
-																		uint16_t session_index,
-																		struct ether_addr client_l2addr);
-																void send_proto_reject(
-																		uint16_t type,
-																		struct rte_mbuf * pkt);
-																PPPIpcpUsed * get_ip_dns(
-																		int session_index);
-																uint32_t get_ip();
-																uint32_t get_server_ip();
-																void send_ip_req(
-																		uint16_t session_index,
-																		struct rte_mbuf* pkt);
-																int ethaddr_to_string(
-																		char* str2write,
-																		const struct ether_addr* eth_addr);
-																int create_session(
-																		struct ether_addr client_l2addr);
-																int create_connection(
-																		uint16_t session_index,
-																		uint16_t port);
-																int get_sslot();
-																int get_cslot();
-																int fill_session(
-																		int index,
-																		struct ether_addr client_l2addr);
-																void update_session(
-																		int index,
-																		struct ether_addr client_l2addr);
-																int fill_connection(
-																		int c_index,
-																		uint16_t s_index,
-																		uint16_t port);
-																void delete_session(
-																		int index);
-																void delete_connection(
-																		int index);
-																int check_and_set_connection(
-																		int s_index,
-																		uint16_t port);
-																uint32_t check_and_set_ip();
-																Connection * get_client_connection(
-																		uint16_t port);
-																void send_term_req(
-																		uint16_t index);
-																void send_padt(
-																		uint16_t s_index);
-																void * check_and_free_session();
-																void * check_and_free_connection();
-																int auth(
-																		char * username,
-																		char * password);
-																void read_config();
-																void send_connection_reply(
-																		uint16_t session_index,
-																		uint16_t clientPort,
-																		struct rte_mbuf* rcvd_pkt);
-																unsigned long long gettime();
+void send_config_req(
+    uint8_t type,
+    uint16_t session_index,
+    struct ether_addr client_l2addr);
+void send_echo_req(
+    uint16_t session_index,
+    struct ether_addr client_l2addr);
+void send_auth_ack(
+    uint8_t identifier,
+    uint16_t session_index,
+    struct ether_addr client_l2addr);
+void send_auth_nak(
+    uint8_t identifier,
+    uint16_t session_index,
+    struct ether_addr client_l2addr);
+void send_proto_reject(
+    uint16_t type,
+    struct rte_mbuf * pkt);
+PPPIpcpUsed * get_ip_dns(
+    int session_index);
+uint32_t get_ip();
+uint32_t get_server_ip();
+void send_ip_req(
+    uint16_t session_index,
+    struct rte_mbuf* pkt);
+int ethaddr_to_string(
+    char* str2write,
+    const struct ether_addr* eth_addr);
+int create_session(
+    struct ether_addr client_l2addr);
+int create_connection(
+    uint16_t session_index,
+    uint16_t port);
+int get_sslot();
+int get_cslot();
+int fill_session(
+    int index,
+    struct ether_addr client_l2addr);
+void update_session(
+    int index,
+    struct ether_addr client_l2addr);
+int fill_connection(
+    int c_index,
+    uint16_t s_index,
+    uint16_t port);
+void delete_session(
+    int index);
+void delete_connection(
+    int index);
+int check_and_set_connection(
+    int s_index,
+    uint16_t port);
+uint32_t check_and_set_ip();
+Connection * get_client_connection(
+    uint16_t port);
+void send_term_req(
+    uint16_t index);
+void send_padt(
+    uint16_t s_index);
+void * check_and_free_session();
+void * check_and_free_connection();
+int auth(
+    char * username,
+    char * password);
+void read_config();
+void send_connection_reply(
+    uint16_t session_index,
+    uint16_t clientPort,
+    struct rte_mbuf* rcvd_pkt);
+unsigned long long gettime();

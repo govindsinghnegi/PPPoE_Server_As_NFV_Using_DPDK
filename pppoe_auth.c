@@ -168,7 +168,8 @@ void createHashTable()
 }
 
 
-int auth(char * username, char * password) {
+int auth(char * username, char * password)
+{
     hashTable = (struct Hash *)calloc(TOTAL_ROW, sizeof (struct Hash));
     createHashTable();
     return(authenticate(username, password));
