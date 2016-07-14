@@ -1,10 +1,35 @@
+/* ippool - To provide ip and dns values to other part of the system.
+ * Copyright (C) 2016  Sooraj Mandotti
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * sooraj.mandotti@stud.tu-darmstadt.de, Technical University Darmstadt
+ *
+ */
+
 unsigned int max_host = 0;
 static unsigned int ip_count = 0;
 uint8_t count_oct3 = 0;
 uint8_t count_oct4 = 0;
 int first_ip_assignment = 0;
 
-//get dns values
+
+/**
+ * @brief This function returns ip and dns values.
+ * @param session index.
+ * @return structure filled PPPIpcpUsed.
+ */
 PPPIpcpUsed * get_ip_dns(int session_index)
 {
 
@@ -15,90 +40,11 @@ PPPIpcpUsed * get_ip_dns(int session_index)
     return ipDns;
 }
 
-//get an ip from the ip pool, deprecated code
-uint32_t get_ip_old()
-{
 
-    unsigned int host_range = 32 - net_range;
-    //for safety ignoring 4 ip's
-    max_host = (1 << host_range) - 4;
-    uint32_t ip = 0;
-    uint8_t oct1 = 0;
-    uint8_t oct2 = 0;
-    uint8_t oct3 = 0;
-    uint8_t oct4 = 0;
-    int error = 0;
-
-    if (host_range <= 8)
-    {
-        if ((ip_count < max_host) && (count_oct4 < 254))
-        {
-            count_oct4 += 1;
-            oct4 = count_oct4;
-            ip_count++;
-        }
-        else
-        {
-            error = 1;
-        }
-
-    }
-    else if (host_range <= 16)
-    {
-
-        if ((ip_count < max_host) && (count_oct3 < 254))
-        {
-            if ((ip_count < max_host) && (count_oct4 < 254))
-            {
-                count_oct4 += 1;
-                oct4 = count_oct4;
-                ip_count++;
-            }
-            else if ((ip_count < max_host) && (count_oct4 = 254))
-            {
-                count_oct4 = 1;
-                count_oct3 += 1;
-                oct4 = count_oct4;
-                oct3 = count_oct3;
-                ip_count++;
-            }
-
-        }
-        else if ((ip_count < max_host) && (count_oct3 = 254))
-        {
-            if ((ip_count < max_host) && (count_oct4 < 254))
-            {
-                count_oct4 += 1;
-                oct4 = count_oct4;
-                ip_count++;
-            }
-            else if ((ip_count < max_host) && (count_oct4 = 254))
-            {
-                error = 1;
-            }
-        }
-        else
-        {
-            error = 1;
-        }
-    }
-    oct1 = 192;
-    oct2 = 168;
-
-    if (error)
-    {
-        oct1 = 0;
-        oct2 = 0;
-        oct3 = 0;
-        oct4 = 0;
-    }
-
-    ip = oct1 | (oct2 << 8) | (oct3 << 16) | (oct4 << 24);
-
-    return ip;
-}
-
-//get an ip from the ippool
+/**
+ * @brief This function generates an ip from the ippool.
+ * @return ip.
+ */
 uint32_t get_ip()
 {
 
@@ -171,7 +117,11 @@ uint32_t get_ip()
     return ip;
 }
 
-//get the server's intranet ip
+
+/**
+ * @brief This function returns server's internet address.
+ * @return server's internet address.
+ */
 uint32_t get_server_ip()
 {
 

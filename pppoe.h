@@ -1,3 +1,23 @@
+/* pppoe - Contains declarations of all structures used.
+ * Copyright (C) 2016  Govind Singh
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * govind.singh@stud.tu-darmstadt.de, Technical University Darmstadt
+ *
+ */
+
 /***********************************************************
  *User configurable parameters
  *Populated from pppoe.conf file
@@ -36,6 +56,7 @@ uint32_t ip_dns2;
 
 //session and connection idle timeout  (in minute)
 double sess_timeout;
+//this is a stale entry (ignore it)
 double conn_timeout;
 
 //start and end ranges
@@ -319,13 +340,6 @@ PPPIpcpUsed;
 #define STATE_AUTH_ECHO_SENT	0x04
 #define STATE_TERM_SENT		0x05
 
-//connection index structure per session
-struct conn_index
-{
-    unsigned int index;
-    struct conn_index * next;
-};
-
 //session structure
 typedef struct
 __attribute__((__packed__))
@@ -336,7 +350,6 @@ __attribute__((__packed__))
     unsigned int session_id :16;
     char * host_uniq;
     uint16_t hu_len;
-    struct conn_index * index;
     unsigned int auth_ident :8;
     unsigned int echo_ident :8;
     unsigned int ip_ident :8;
@@ -348,20 +361,6 @@ Session;
 
 extern Session ** session_array;
 static int session_index = 0;
-
-//connection structure
-typedef struct
-__attribute__((__packed__))
-{
-    uint16_t session_index;
-    uint16_t port_origl;
-    uint16_t port_assnd;
-    time_t time;
-    uint8_t active;
-}
-Connection;
-
-extern Connection ** connection_array;
 
 //functions
 void send_config_req(
@@ -394,43 +393,23 @@ int ethaddr_to_string(
     const struct ether_addr* eth_addr);
 int create_session(
     struct ether_addr client_l2addr);
-int create_connection(
-    uint16_t session_index,
-    uint16_t port);
 int get_sslot();
-int get_cslot();
 int fill_session(
     int index,
     struct ether_addr client_l2addr);
 void update_session(
     int index,
     struct ether_addr client_l2addr);
-int fill_connection(
-    int c_index,
-    uint16_t s_index,
-    uint16_t port);
 void delete_session(
     int index);
-void delete_connection(
-    int index);
-int check_and_set_connection(
-    int s_index,
-    uint16_t port);
 uint32_t check_and_set_ip();
-Connection * get_client_connection(
-    uint16_t port);
 void send_term_req(
     uint16_t index);
 void send_padt(
     uint16_t s_index);
 void * check_and_free_session();
-void * check_and_free_connection();
 int auth(
     char * username,
     char * password);
 void read_config();
-void send_connection_reply(
-    uint16_t session_index,
-    uint16_t clientPort,
-    struct rte_mbuf* rcvd_pkt);
 unsigned long long gettime();

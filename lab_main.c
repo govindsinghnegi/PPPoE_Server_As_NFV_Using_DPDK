@@ -1,3 +1,23 @@
+/* lab_main - Starting point of server, establishes mempool and enables lcores and interfaces.
+ * Copyright (C) 2016  Puneet Arora
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * puneet.arora@stud.tu-darmstadt.de, Technical University Darmstadt
+ *
+ */
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -234,13 +254,6 @@ int main(int argc, char **argv)
     //Find the interior and exterior interface by MAC address...
     printf("[[I]] Associating devices...\n");
 
-//    //Claims the first available interface for DPDK.
-//    struct ether_addr found_dev_macaddr;
-//    rte_eth_macaddr_get(ETHDEV_ID, &found_dev_macaddr);
-//    char ether_addr_string[20];
-//    ethaddr_to_string(ether_addr_string, &found_dev_macaddr);	//TODO
-//    printf("  MAC Address of device: %s\n", ether_addr_string);
-
     nb_ports = rte_eth_dev_count();
 
     uint8_t socket = rte_lcore_to_socket_id(our_lcore);
@@ -249,7 +262,7 @@ int main(int argc, char **argv)
     //Set up a mempool for packets
 
     printf("[[I]] Configuring mempool...\n");
-    unsigned mempool_sz = tz_getMBufMempoolSize(1, 1, 1, 1);	//TODO
+    unsigned mempool_sz = tz_getMBufMempoolSize(1, 1, 1, 1);
     mempool = rte_mempool_create("DEFAULT_MEMPOOL",
                                  mempool_sz, //The number of elements in the mempool. n = (2^q - 1).
                                  MBUF_SIZE,	//Size of each element

@@ -1,3 +1,23 @@
+/* lab_task - Master and Slave jobs, processing access and internet packets respectively
+ * Copyright (C) 2016  Sooraj Mandotti
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * sooraj.mandotti@stud.tu-darmstadt.de, Technical University Darmstadt
+ *
+ */
+
 struct rte_ring *ring;
 unsigned long long pkt_in_start_time;
 unsigned long long pkt_in_end_time;
@@ -96,6 +116,10 @@ static int lcore_slave_job(__attribute__((unused)) void *dummy)
                 uint8_t base = start_ip_oct3;
                 uint8_t start_base = start_ip_oct4;
 
+		/*
+		 * If octet 3 of ip is same as base, then index is the difference  
+		 * Else, index = (254 - received oct4) + ((oct3 range -1) times 254 + oct4 received)
+		 */
                 int index =
                     (oct3 == base) ?
                     oct4 - start_base :
@@ -137,6 +161,7 @@ static int lcore_slave_job(__attribute__((unused)) void *dummy)
 
                     int retrn = rte_eth_tx_burst(ETHDEV_ID, 0,
                                                  &internet_rcv_pkt_bucket[i], 1);
+		    session_array[index]->time = time(NULL);
                     pkt_out_end_time = gettime();
                     if (retrn != 1 && DEBUG)
                     {
@@ -174,8 +199,8 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
     //read config file to populate required parameters
     read_config();
 
-    //start the two session maintenance threads
-    pthread_t s_tid, c_tid;
+    //start the session maintenance thread
+    pthread_t s_tid;
     int error;
     if (pthread_mutex_init(&conn_lock, NULL) != 0)
     {
@@ -190,11 +215,6 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
     if (error != 0 && DEBUG)
     {
         RTE_LOG(INFO, USER1, "=> Session thread creation failed\n");
-    }
-    error = pthread_create(&c_tid, NULL, &check_and_free_connection, NULL);
-    if (error != 0 && DEBUG)
-    {
-        RTE_LOG(INFO, USER1, "=> Connection thread creation failed\n");
     }
 
     /*
@@ -229,6 +249,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
             {
 
                 PPPoEEncap * pppoee = (rte_pktmbuf_mtod(pkt, PPPoEEncap *));
+
                 //drop all, except term-ack packets from client if termination requested
                 if (__bswap_16(l2hdr->ether_type) == ETHER_SESSION
                         && (session_array[__bswap_16(pppoee->session) - 1])->state
@@ -432,12 +453,6 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
 
                     //Enqueue the packet on queue.
                     int retrn = rte_ring_sp_enqueue(ring, rcv_pkt_bucket[i]);
-                    /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0,
-                     &rcv_pkt_bucket[i], 1);
-                     if (retrn != 1 && DEBUG) {
-                     RTE_LOG(INFO, USER1,
-                     "TX burst failed with error code %i.\n", retrn);
-                     }*/
                     if (retrn != 0 && DEBUG)
                     {
                         RTE_LOG(INFO, USER1,
@@ -649,12 +664,6 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
 
                     //Enqueue the packet on queue.
                     int retrn = rte_ring_sp_enqueue(ring, rcv_pkt_bucket[i]);
-                    /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0,
-                     &rcv_pkt_bucket[i], 1);
-                     if (retrn != 1 && DEBUG) {
-                     RTE_LOG(INFO, USER1,
-                     "TX burst failed with error code %i.\n", retrn);
-                     }*/
                     if (retrn != 0 && DEBUG)
                     {
                         RTE_LOG(INFO, USER1,
@@ -663,7 +672,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                     }
                     continue;
 
-                    //check if it is PADT packet
+                //check if it is PADT packet
                 }
                 else if (pppoee->code == CODE_PADT)
                 {
@@ -676,7 +685,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                     //delete the session
                     int index = __bswap_16(pppoee->session) - 1;
                     delete_session(index);
-                    //check if it is a session packet
+                //check if it is a session packet
                 }
                 else if (pppoee->code == CODE_SESS)
                 {
@@ -710,7 +719,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                                         "=> Configure-request Packet received\n");
                             }
 
-                            //check the configuration parameter, for now just send a ACK
+                            //send an ACK
 
                             ppplcp->code = CODE_CONF_ACK;
                             memcpy(&pppoee->l2hdr.d_addr, &pppoee->l2hdr.s_addr,
@@ -721,12 +730,6 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                             //Enqueue the packet on queue.
                             int retrn = rte_ring_sp_enqueue(ring,
                                                             rcv_pkt_bucket[i]);
-                            /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0,
-                             &rcv_pkt_bucket[i], 1);
-                             if (retrn != 1 && DEBUG) {
-                             RTE_LOG(INFO, USER1,
-                             "TX burst failed with error code %i.\n", retrn);
-                             }*/
                             if (retrn != 0 && DEBUG)
                             {
                                 RTE_LOG(INFO, USER1,
@@ -748,7 +751,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                                         "=> Echo-request Packet received\n");
                             }
 
-                            //check the configuration parameter, for now just send a Echo-request and reply
+                            //send a Echo-request and reply
 
                             ppplcp->code = CODE_ECHO_REP;
 
@@ -765,12 +768,6 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                             //Enqueue the packet on queue.
                             int retrn = rte_ring_sp_enqueue(ring,
                                                             rcv_pkt_bucket[i]);
-                            /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0,
-                             &rcv_pkt_bucket[i], 1);
-                             if (retrn != 1 && DEBUG) {
-                             RTE_LOG(INFO, USER1,
-                             "TX burst failed with error code %i.\n", retrn);
-                             }*/
                             if (retrn != 0 && DEBUG)
                             {
                                 RTE_LOG(INFO, USER1,
@@ -824,12 +821,6 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                             //Enqueue the packet on queue.
                             int retrn = rte_ring_sp_enqueue(ring,
                                                             rcv_pkt_bucket[i]);
-                            /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0,
-                             &rcv_pkt_bucket[i], 1);
-                             if (retrn != 1 && DEBUG) {
-                             RTE_LOG(INFO, USER1,
-                             "TX burst failed with error code %i.\n", retrn);
-                             }*/
                             if (retrn != 0 && DEBUG)
                             {
                                 RTE_LOG(INFO, USER1,
@@ -869,7 +860,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                         memset(&user_name[0], '\0', sizeof(user_name));
                         memset(&user_passwd[0], '\0', sizeof(user_passwd));
 
-                        //get the username and password
+                        //check if it is an authentication request
                         if (ppppapr->code == CODE_AUT_REQ)
                         {
 
@@ -900,15 +891,12 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
 
                         //authenticate the username and password
                         int result = auth(user_name, user_passwd);
-                        //int result = 1;
                         if (!result)
                         {
                             //send AUTH NAK
                             int index = __bswap_16(pppoee->session) - 1;
                             send_auth_nak((uint8_t) ppppapr->identifier,
                                           (uint16_t) index, pppoee->l2hdr.s_addr);
-
-                            //do session termination procdure
 
                         }
                         else
@@ -922,7 +910,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                         rte_pktmbuf_free(pkt);
                         continue;
 
-                        //check if it is a compression control protocol, we reject protocol = no compression
+                    //check if it is a compression control protocol, we reject protocol = no compression
                     }
                     else if (__bswap_16(pppptcl->protocol) == PROTO_CCP)
                     {
@@ -937,7 +925,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                         rte_pktmbuf_free(pkt);
                         continue;
 
-                        //check if it is a IPv6 control protocol, we reject it
+                    //check if it is a IPv6 control protocol, we reject it
                     }
                     else if (__bswap_16(pppptcl->protocol) == PROTO_IPV6C)
                     {
@@ -952,7 +940,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                         rte_pktmbuf_free(pkt);
                         continue;
 
-                        //check if it is a IPCP packet
+                    //check if it is a IPCP packet
                     }
                     else if (__bswap_16(pppptcl->protocol) == PROTO_IPCP)
                     {
@@ -968,7 +956,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                         PPPIpcpUsed * ipDns;
                         int type = 0;
 
-                        //some unexpected error in peer mac address, check it
+                        //some unexpected error in peer mac address, printing it.
                         char ethr[50];
                         ethaddr_to_string(ethr, &(pppoee->l2hdr.s_addr));
                         RTE_LOG(INFO, USER1, "=> ether src %s\n", ethr);
@@ -1043,7 +1031,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                             if (type == 2)
                             {
                                 pppipcp->code = CODE_IPCP_ACK;
-                                //send NAK to peer
+                            //send NAK to peer
                             }
                             else if (type == 3)
                             {
@@ -1068,12 +1056,6 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                             //Enqueue the packet on queue.
                             int retrn = rte_ring_sp_enqueue(ring,
                                                             rcv_pkt_bucket[i]);
-                            /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0,
-                             &rcv_pkt_bucket[i], 1);
-                             if (retrn != 1 && DEBUG) {
-                             RTE_LOG(INFO, USER1,
-                             "TX burst failed with error code %i.\n", retrn);
-                             }*/
                             if (retrn != 0 && DEBUG)
                             {
                                 RTE_LOG(INFO, USER1,
@@ -1101,7 +1083,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                             continue;
                         }
 
-                        //check if it is a IPv4 packet
+                    //check if it is a IPv4 packet
                     }
                     else if (__bswap_16(pppptcl->protocol) == PROTO_IPV4)
                     {
@@ -1130,6 +1112,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                             //send the packet
                             int retrn = rte_eth_tx_burst(ETHDEV_ID + 1, 0,
                                                          &rcv_pkt_bucket[i], 1);
+			    session_array[s_index]->time = time(NULL);
                             pkt_in_end_time = gettime();
                             if (DEBUG)
                             {
@@ -1155,6 +1138,7 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
                 }
 
             }
+	    //not a PPPoE packet, drop it.
             else
             {
                 RTE_LOG(INFO, USER1,
@@ -1163,15 +1147,6 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
 
                 continue;
             }
-
-            //=== END of packet parsing
-
-//			int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &rcv_pkt_bucket[i], 1);
-//			//For better performance, you could also bulk-send multiple packets here.
-//			if (retrn != 1) {
-//				RTE_LOG(INFO, USER1,
-//						"    TX burst failed with error code %i.\n", retrn);
-//			}
 
         }
 
@@ -1232,14 +1207,6 @@ void send_config_req(uint8_t type, uint16_t session_index,
         ppplcpos->value = __bswap_16(PROTO_PAP);
         pppoe_payload_legth += (uint16_t) sizeof(PPPLcpOptionsGenl);
         ppplcp_length += (uint16_t) ppplcpos->length;
-
-        //PPPLcpOptionsMagic * magic = (PPPLcpOptionsMagic *) rte_pktmbuf_append(acpkt, sizeof(PPPLcpOptionsMagic));
-        //magic->type = TYPE_MGN;
-        //      magic->length = 0x06; //will always be 6 bytes long
-        //for now add a temp magic no:
-        //    magic->value = __bswap_16(0x12345678);
-        //  pppoe_payload_legth += (uint16_t) sizeof(PPPLcpOptionsMagic);
-        //ppplcp_length += (uint16_t) magic->length;
     }
     else
     {
@@ -1254,10 +1221,6 @@ void send_config_req(uint8_t type, uint16_t session_index,
     //send the packet
     //Enqueue the packet on queue.
     int retrn = rte_ring_sp_enqueue(ring, acpkt);
-    /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
-     if (retrn != 1 && DEBUG) {
-     RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
-     }*/
     if (retrn != 0 && DEBUG)
     {
         RTE_LOG(INFO, USER1, "Ring enqueue failed with error code %i.\n",
@@ -1310,10 +1273,6 @@ void send_echo_req(uint16_t session_index, struct ether_addr client_l2addr)
     ppplcpms->length = __bswap_16(ppplcp_length);
     pppoeer->length = __bswap_16(pppoe_payload_legth);
     int retrn = rte_ring_sp_enqueue(ring, acpkt);
-    /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
-     if (retrn != 1 && DEBUG) {
-     RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
-     }*/
     if (retrn != 0 && DEBUG)
     {
         RTE_LOG(INFO, USER1, "Ring enqueue failed with error code %i.\n",
@@ -1364,10 +1323,6 @@ void send_auth_ack(uint8_t identifier, uint16_t session_index,
     ppppapas->length = __bswap_16(ppppap_length);
     pppoeer->length = __bswap_16(pppoe_payload_legth);
     int retrn = rte_ring_sp_enqueue(ring, acpkt);
-    /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
-     if (retrn != 1 && DEBUG) {
-     RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
-     }*/
     if (retrn != 0 && DEBUG)
     {
         RTE_LOG(INFO, USER1, "Ring enqueue failed with error code %i.\n",
@@ -1418,10 +1373,6 @@ void send_auth_nak(uint8_t identifier, uint16_t session_index,
     ppppapas->length = __bswap_16(ppppap_length);
     pppoeer->length = __bswap_16(pppoe_payload_legth);
     int retrn = rte_ring_sp_enqueue(ring, acpkt);
-    /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
-     if (retrn != 1 && DEBUG) {
-     RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
-     }*/
     if (retrn != 0 && DEBUG)
     {
         RTE_LOG(INFO, USER1, "Ring enqueue failed with error code %i.\n",
@@ -1477,10 +1428,6 @@ void send_proto_reject(uint16_t type, struct rte_mbuf* pkt)
     ppplcprjct->length = __bswap_16(pppprjct_length);
     pppoeer->length = __bswap_16(pppoe_payload_legth);
     int retrn = rte_ring_sp_enqueue(ring, acpkt);
-    /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
-     if (retrn != 1 && DEBUG) {
-     RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
-     }*/
     if (retrn != 0 && DEBUG)
     {
         RTE_LOG(INFO, USER1, "Ring enqueue failed with error code %i.\n",
@@ -1533,10 +1480,6 @@ void send_ip_req(uint16_t session_index, struct rte_mbuf* pkt)
     pppipcp->length = __bswap_16(pppipcp_length);
     pppoeer->length = __bswap_16(pppoe_payload_legth);
     int retrn = rte_ring_sp_enqueue(ring, acpkt);
-    /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
-     if (retrn != 1 && DEBUG) {
-     RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
-     }*/
     if (retrn != 0 && DEBUG)
     {
         RTE_LOG(INFO, USER1, "Ring enqueue failed with error code %i.\n",
@@ -1592,10 +1535,6 @@ void send_term_req(uint16_t index)
     pppoeer->length = __bswap_16(pppoe_payload_legth);
     //send the packet
     int retrn = rte_ring_sp_enqueue(ring, acpkt);
-    /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
-     if (retrn != 1 && DEBUG) {
-     RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
-     }*/
     if (retrn != 0 && DEBUG)
     {
         RTE_LOG(INFO, USER1, "Ring enqueue failed with error code %i.\n",
@@ -1660,10 +1599,6 @@ void send_padt(uint16_t index)
     pppoeer->length = __bswap_16((uint16_t)(pppoe_payload_length));
 
     int retrn = rte_ring_sp_enqueue(ring, acpkt);
-    /*int retrn = rte_eth_tx_burst(ETHDEV_ID, 0, &acpkt, 1);
-     if (retrn != 1 && DEBUG) {
-     RTE_LOG(INFO, USER1, "TX burst failed with error code %i.\n", retrn);
-     }*/
     if (retrn != 0 && DEBUG)
     {
         RTE_LOG(INFO, USER1, "Ring enqueue failed with error code %i.\n",
