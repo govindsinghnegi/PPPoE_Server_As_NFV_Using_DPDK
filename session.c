@@ -24,7 +24,7 @@ static int free_session_index = 0;
 Session ** session_array = NULL;
 Session ** temps_array;
 
-//free ip list
+//free ip list structure
 struct free_ip
 {
     uint32_t ip;
@@ -33,7 +33,11 @@ struct free_ip
 
 struct free_ip * fr_ip = NULL;
 
-//create a session entry in the session array
+/**
+ * @brief Create a session entry in the session array.
+ * @param ethernet address of client.
+ * @return -1 if failed, greater than or equal 0 else.
+ */
 int create_session(struct ether_addr client_l2addr)
 {
 
@@ -91,7 +95,10 @@ int create_session(struct ether_addr client_l2addr)
 }
 
 
-//get a free slot if available
+/**
+ * @brief Get a free session slot.
+ * @return slot.
+ */
 int get_sslot()
 {
 
@@ -106,7 +113,11 @@ int get_sslot()
 }
 
 
-//fill a session given session index and mac
+/**
+ * @brief Fill a session given session.
+ * @param session index, ethernet address of client.
+ * @return 0 if failed, 1 if success.
+ */
 int fill_session(int index, struct ether_addr client_l2addr)
 {
 
@@ -131,7 +142,10 @@ int fill_session(int index, struct ether_addr client_l2addr)
 }
 
 
-//check if an ip already exist in ip free list, else create one
+/**
+ * @brief Checks if an ip already exist in ip free list, else create one.
+ * @return ip.
+ */
 uint32_t check_and_set_ip()
 {
     uint32_t ip;
@@ -158,7 +172,10 @@ uint32_t check_and_set_ip()
 }
 
 
-//update a session (keep the ip from last assignment)
+/**
+ * @brief Update a session (keep the ip from last assignment).
+ * @param session index, ethernet address of client.
+ */
 void update_session(int index, struct ether_addr client_l2addr)
 {
 
@@ -176,7 +193,10 @@ void update_session(int index, struct ether_addr client_l2addr)
 }
 
 
-//delete a session
+/**
+ * @brief Delete a session.
+ * @param session index.
+ */
 void delete_session(int index)
 {
 
@@ -247,7 +267,9 @@ void delete_session(int index)
 }
 
 
-//session termination thread
+/**
+ * @brief Session termination thread.
+ */
 void * check_and_free_session()
 {
 

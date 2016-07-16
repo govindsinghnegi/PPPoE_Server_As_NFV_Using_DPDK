@@ -26,6 +26,9 @@
 #define MAX_INT_LEN 6
 #define DELIMITER "="
 
+// this functions converts a given string containing a MAC address to
+// an array of MAC address octets where each octet is stored at its corresponding index - 1
+//Reference http://stackoverflow.com/questions/35227449/convert-ip-or-mac-address-from-string-to-byte-array-arduino-or-c
 void convertStrToMac(const char* macStr, char separator, unsigned char* macByteArr, int maxBytes, int base)
 {
     int i;
@@ -41,6 +44,10 @@ void convertStrToMac(const char* macStr, char separator, unsigned char* macByteA
     }
 }
 
+// this functions converts a given string containing an IP address to
+// an array of IP address octets where each octet is stored at its corresponding index - 1
+// sep2 is used when the IP address string also contains subnet mask information
+//Reference http://stackoverflow.com/questions/35227449/convert-ip-or-mac-address-from-string-to-byte-array-arduino-or-c
 void convertStrToIP(const char* ipStr, char sep1, char sep2, unsigned char* ipByteArr, int maxBytes, int base)
 {
     int i;
@@ -63,10 +70,12 @@ void convertStrToIP(const char* ipStr, char sep1, char sep2, unsigned char* ipBy
     }
 }
 
+// this function returns ConfigParameter structure containing
+// all config params read from file pppoe.conf
+// variable tracker always points to the current line being processed in config file
 ConfigParameter * getConfigParameters()
 {
     ConfigParameter *configParameter = (ConfigParameter *)malloc(sizeof(ConfigParameter));
-    \
     char *propName;
     char temp[MAX_INT_LEN];
     char macStr[MAX_STR_LEN];

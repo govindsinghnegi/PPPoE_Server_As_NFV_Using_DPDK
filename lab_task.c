@@ -1,4 +1,5 @@
 /* lab_task - Master and Slave jobs, processing access and internet packets respectively
+ * Reference https://www.roaringpenguin.com/products/pppoe
  * Copyright (C) 2016  Sooraj Mandotti
  *
  * This program is free software: you can redistribute it and/or modify
@@ -24,6 +25,9 @@ unsigned long long pkt_in_end_time;
 unsigned long long pkt_out_start_time;
 unsigned long long pkt_out_end_time;
 
+/**
+ * @brief This function creates a ring buffer.
+ */
 void init_ring()
 {
 
@@ -39,6 +43,10 @@ void init_ring()
 
 }
 
+/**
+ * @brief This function returns current system time in nano second.
+ * @return time.
+ */
 unsigned long long gettime()
 {
     struct timespec ctime;
@@ -47,6 +55,12 @@ unsigned long long gettime()
     return time;
 }
 
+/**
+ * @brief This function is responsible for processing all packets from 
+ * internet to access network, also packets present in ring buffer.
+ * @param NULL
+ * @return status if any.
+ */
 static int lcore_slave_job(__attribute__((unused)) void *dummy)
 {
 
@@ -189,6 +203,14 @@ static int lcore_slave_job(__attribute__((unused)) void *dummy)
     }
 }
 
+
+/**
+ * @brief This function is responsible for processing all packets from 
+ * access network, which include PPPoE, PPP and IPv4 packets.
+ * Any packet other than normal IPv4 packet will be put into ring buffer. 
+ * @param NULL
+ * @return status if any.
+ */
 static int do_dataplane_job(__attribute__((unused)) void *dummy)
 {
 
@@ -249,6 +271,14 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
             {
 
                 PPPoEEncap * pppoee = (rte_pktmbuf_mtod(pkt, PPPoEEncap *));
+
+		//drop all packets with unexpected session id 
+		if (pppoee->code != CODE_PADI && pppoee->code != CODE_PADR) {
+			if ((__bswap_16(pppoee->session)-1) < 0 || ((__bswap_16(pppoee->session)-1) >= session_index) ) {
+				rte_pktmbuf_free(pkt);
+				continue;
+			}
+		}
 
                 //drop all, except term-ack packets from client if termination requested
                 if (__bswap_16(l2hdr->ether_type) == ETHER_SESSION
@@ -1155,8 +1185,10 @@ static int do_dataplane_job(__attribute__((unused)) void *dummy)
     return 0;
 }
 
-/*
- *Function to send a config request
+
+/**
+ * @brief Function to send a config request.
+ * @param type of conf-request, session index, ethernet address of client.
  */
 void send_config_req(uint8_t type, uint16_t session_index,
                      struct ether_addr client_l2addr)
@@ -1229,8 +1261,10 @@ void send_config_req(uint8_t type, uint16_t session_index,
 
 }
 
-/*
- *Function to send an Echo-request
+
+/**
+ * @brief Function to send an Echo-request.
+ * @param session index, ethernet address of client.
  */
 void send_echo_req(uint16_t session_index, struct ether_addr client_l2addr)
 {
@@ -1280,8 +1314,10 @@ void send_echo_req(uint16_t session_index, struct ether_addr client_l2addr)
     }
 }
 
-/*
- *Function to send an Authentication ACK
+
+/**
+ * @brief Function to send an Authentication ACK.
+ * @param session identifier, session index, ethernet address of client.
  */
 void send_auth_ack(uint8_t identifier, uint16_t session_index,
                    struct ether_addr client_l2addr)
@@ -1330,8 +1366,10 @@ void send_auth_ack(uint8_t identifier, uint16_t session_index,
     }
 }
 
-/*
- *Function to send an Authentication NAK
+
+/**
+ * @brief Function to send an Authentication NAK.
+ * @param session identifier, session index, ethernet address of client.
  */
 void send_auth_nak(uint8_t identifier, uint16_t session_index,
                    struct ether_addr client_l2addr)
@@ -1380,8 +1418,10 @@ void send_auth_nak(uint8_t identifier, uint16_t session_index,
     }
 }
 
-/*
- *Function to send a protocol reject
+
+/**
+ * @brief Function to send a protocol reject.
+ * @param type of protocol to reject, packet's mbuf.
  */
 void send_proto_reject(uint16_t type, struct rte_mbuf* pkt)
 {
@@ -1435,9 +1475,11 @@ void send_proto_reject(uint16_t type, struct rte_mbuf* pkt)
     }
 }
 
-/*
- *Function to send a ip request
- *This function should be called after swapping the mac addresses to send back
+
+/**
+ * @brief Function to send a ip request.
+ * @param session index, packet's mbuf.
+ * This function should be called after swapping the mac addresses to send back.
  */
 void send_ip_req(uint16_t session_index, struct rte_mbuf* pkt)
 {
@@ -1487,8 +1529,10 @@ void send_ip_req(uint16_t session_index, struct rte_mbuf* pkt)
     }
 }
 
-/*
- *Function to send termination request
+
+/**
+ * @brief Function to send termination request.
+ * @param session index.
  */
 void send_term_req(uint16_t index)
 {
@@ -1543,8 +1587,10 @@ void send_term_req(uint16_t index)
     (session_array[index])->state = STATE_TERM_SENT;
 }
 
-/*
- *Function to send PADT
+
+/**
+ * @brief Function to send PADT.
+ * @param session index.
  */
 void send_padt(uint16_t index)
 {
@@ -1606,8 +1652,9 @@ void send_padt(uint16_t index)
     }
 }
 
-/*
- *Function to read configuration prameteres
+
+/**
+ * @brief Function to read configuration prameteres.
  */
 void read_config()
 {

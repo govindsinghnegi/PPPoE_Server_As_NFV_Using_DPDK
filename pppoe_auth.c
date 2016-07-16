@@ -28,6 +28,7 @@
 #define TOTAL_ROW 500
 
 // pre-C99 bool type does not exist, so defining our own
+// Reference http://stackoverflow.com/questions/1921539/using-boolean-values-in-c
 typedef enum { false = 0, true = !false } bool;
 
 struct Hash *hashTable = NULL;
@@ -44,6 +45,7 @@ struct Hash
     int count;
 };
 
+// this function creates the Node to be inserted in Linked List
 struct Node * createNode(char *password)
 {
     struct Node *newnode;
@@ -53,7 +55,9 @@ struct Node * createNode(char *password)
     return newnode;
 }
 
-// using 64-bit int to provide better collision resolution
+// a simple hash function
+// using 64-bit int and prime number to provide better collision resolution
+// reference http://stackoverflow.com/questions/98153/whats-the-best-hashing-algorithm-to-use-on-a-stl-string-when-using-hash-map
 unsigned long long int hashFunction(const char* s)
 {
     unsigned long long int hashVal = 0l;
@@ -64,6 +68,9 @@ unsigned long long int hashFunction(const char* s)
     return hashVal;
 }
 
+// function to insert username & password that are read
+// from passwd file, in hashtable
+// Reference http://see-programming.blogspot.de/2013/05/chain-hashing-separate-chaining-with.html
 void insertToHash(char *username, char *password)
 {
     unsigned long long int hashVal = hashFunction(username);
@@ -87,6 +94,8 @@ void insertToHash(char *username, char *password)
     return;
 }
 
+// this function deletes entry from hash table
+// Reference http://see-programming.blogspot.de/2013/05/chain-hashing-separate-chaining-with.html
 void deleteFromHash(char *username, char *password)
 {
     int flag = 0;
@@ -123,6 +132,8 @@ void deleteFromHash(char *username, char *password)
     return;
 }
 
+// this function does a hash lookup input being the username
+// Reference http://see-programming.blogspot.de/2013/05/chain-hashing-separate-chaining-with.html
 bool authenticate(char *username, char *password)
 {
     bool flag = false;
@@ -140,7 +151,6 @@ bool authenticate(char *username, char *password)
     {
         while (myNode != NULL)
         {
-            //printf("%s\n", myNode->password);
             if (strcasecmp(myNode->password,password) == 0)
             {
                 flag = true;
@@ -156,7 +166,9 @@ bool authenticate(char *username, char *password)
     return flag;
 }
 
-// function definition
+// this function creates the hash table with username being key
+// and password being the value.
+// Reference http://stackoverflow.com/questions/13390133/read-name-value-pairs-from-a-file-in-c
 void createHashTable()
 {
     char *username, *password;
@@ -171,10 +183,9 @@ void createHashTable()
         char file_lines[128];
         while ( fgets ( file_lines, sizeof file_lines, file ) != NULL )
         {
+            // strtok method to split the read line from file based on a delimiter
             username = strtok(file_lines, delimiter);
-            // printf("\n Username (read from file): %s", username);
             password = strtok(NULL, "\r");
-            // printf("\n Password (read from file) : %s", password);
             insertToHash(username, password);
         }
         fclose ( file );
@@ -186,7 +197,8 @@ void createHashTable()
     return;
 }
 
-
+// this function checks if the input values exist in the
+// hash table and returns bool.true if yes else bool.false
 int auth(char * username, char * password)
 {
     hashTable = (struct Hash *)calloc(TOTAL_ROW, sizeof (struct Hash));

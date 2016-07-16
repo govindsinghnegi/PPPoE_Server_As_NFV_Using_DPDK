@@ -203,6 +203,9 @@ int ethaddr_to_string(char* str2write, const struct ether_addr* eth_addr)
                    eth_addr->addr_bytes[4], eth_addr->addr_bytes[5]);
 }
 
+/**
+ * Starting point of execution.
+ */
 int main(int argc, char **argv)
 {
 
